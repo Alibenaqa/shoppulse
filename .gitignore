@@ -1,0 +1,24 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Secrets
+.env
+
+# Données complètes : jamais versionnées (seuls les échantillons < 1 Mo)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/
+
+# Modèles entraînés
+models/
+
+# Divers
+.DS_Store
+.ipynb_checkpoints/
