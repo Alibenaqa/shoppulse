@@ -2,8 +2,9 @@
 -- recharge, le tout dans la même transaction (gérée côté Python).
 --
 -- Règles de nettoyage appliquées (tracées ici, rapport qualité à venir) :
---   R1 geolocation : plusieurs points par code postal -> une ligne par code
---      postal (moyenne lat/lng, ville et état les plus fréquents).
+--   R1 geolocation : points hors du Brésil (boîte englobante) écartés, puis
+--      une ligne par code postal (moyenne lat/lng, ville et état les plus
+--      fréquents).
 --   R2 categories  : les catégories présentes dans products mais absentes
 --      de la table de traduction sont ajoutées avec leur nom portugais.
 --   R3 products    : colonnes "lenght" renommées en "length", casts en
@@ -29,6 +30,8 @@ SELECT geolocation_zip_code_prefix,
     MODE() WITHIN GROUP (ORDER BY geolocation_city),
     MODE() WITHIN GROUP (ORDER BY geolocation_state)
 FROM raw.geolocation
+WHERE geolocation_lat::DOUBLE PRECISION BETWEEN -33.8 AND 5.3
+    AND geolocation_lng::DOUBLE PRECISION BETWEEN -74.0 AND -34.8
 GROUP BY geolocation_zip_code_prefix;
 
 -- R2

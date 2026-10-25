@@ -1,5 +1,6 @@
 """Chargement des 9 CSV Olist dans PostgreSQL (couches RAW puis CORE)."""
 
+import csv
 from pathlib import Path
 
 from shoppulse.config import RAW_DATA_DIR, SQL_DIR
@@ -15,6 +16,17 @@ CSV_TO_RAW_TABLE = {
     "olist_products_dataset.csv": "raw.products",
     "olist_sellers_dataset.csv": "raw.sellers",
     "product_category_name_translation.csv": "raw.category_translation",
+}
+RAW_TO_CORE_TABLE = {
+    "raw.customers": "core.customers",
+    "raw.geolocation": "core.geolocation",
+    "raw.order_items": "core.order_items",
+    "raw.order_payments": "core.order_payments",
+    "raw.order_reviews": "core.order_reviews",
+    "raw.orders": "core.orders",
+    "raw.products": "core.products",
+    "raw.sellers": "core.sellers",
+    "raw.category_translation": "core.categories",
 }
 CORE_TABLES = [
     "core.customers", "core.geolocation", "core.categories",
@@ -42,6 +54,19 @@ class OlistLoader:
                 f"CSV manquants dans {self.raw_dir} : {', '.join(missing)}"
             )
 
+    def check_headers(self) -> None:
+        """Vérifie que l'en-tête de chaque CSV correspond à sa table RAW."""
+        for csv_name, table in CSV_TO_RAW_TABLE.items():
+            csv_path = self.raw_dir / csv_name
+            with csv_path.open(encoding="utf-8-sig") as csv_file:
+                header = next(csv.reader(csv_file))
+            expected = self.database.columns(table)
+            if header != expected:
+                raise ValueError(
+                    f"En-tête inattendu pour {csv_name} : {header} "
+                    f"(attendu : {expected})"
+                )
+
     def create_schemas(self) -> None:
         """Crée les schémas RAW et CORE s'ils n'existent pas."""
         self.database.execute_file(SQL_DIR / "schema_raw.sql")
@@ -67,4 +92,5 @@ class OlistLoader:
         """Exécute le chargement complet et renvoie les volumes."""
         self.check_files()
         self.create_schemas()
+        self.check_headers()
         return {"raw": self.load_raw(), "core": self.transform_core()}
