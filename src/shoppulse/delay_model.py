@@ -69,6 +69,9 @@ LINEAR_FEATURES = [
     column for column in NUMERIC_FEATURES if column not in LOG_FEATURES
 ]
 
+PREDICTION_COLUMNS = ["order_id", "purchase_timestamp", "customer_region",
+                      TARGET]
+
 BASELINE = "baseline_taux_moyen"
 STATE_RULE = "regle_taux_par_etat"
 LOGISTIC = "regression_logistique"
@@ -218,6 +221,7 @@ class DelayModelResults:
     threshold: float
     importance: pd.DataFrame
     test_predictions: pd.DataFrame
+    validation_predictions: pd.DataFrame
     sizes: dict[str, float] = field(default_factory=dict)
 
 
@@ -230,8 +234,9 @@ class DelayModelTrainer:
     le pipeline exactement rejouable.
     """
 
-    def __init__(self, frame: pd.DataFrame,
-                 test_start: str = TEST_START) -> None:
+    def __init__(self, frame: pd.DataFrame, test_start: str = TEST_START,
+                 features: list[str] | None = None) -> None:
+        self.features = features or FEATURES
         self.frame = frame.sort_values(["purchase_timestamp", "order_id"])
         is_test = self.frame["purchase_timestamp"] >= test_start
         self.train = self.frame[~is_test].reset_index(drop=True)
@@ -257,7 +262,7 @@ class DelayModelTrainer:
     def cross_validate(self) -> pd.DataFrame:
         """Validation croisée temporelle : chaque pli apprend sur le passé
         et valide sur la période qui suit."""
-        X, y = self.train[FEATURES], self.train[TARGET].to_numpy()
+        X, y = self.train[self.features], self.train[TARGET].to_numpy()
         splitter = TimeSeriesSplit(n_splits=CV_SPLITS)
         rows = []
         for name, model in self.candidates.items():
@@ -292,14 +297,13 @@ class DelayModelTrainer:
                                                    pd.DataFrame]:
         """Réentraîne chaque modèle sur toute la période d'apprentissage et
         le mesure sur la période de test."""
-        X_train, y_train = self.train[FEATURES], self.train[TARGET]
+        X_train, y_train = self.train[self.features], self.train[TARGET]
         y_test = self.test[TARGET].to_numpy()
         rows = []
-        predictions = self.test[["order_id", "purchase_timestamp",
-                                 "customer_region", TARGET]].copy()
+        predictions = self.test[PREDICTION_COLUMNS].copy()
         for name, model in self.candidates.items():
             fitted = self.fit(model, X_train, y_train)
-            proba = fitted.predict_proba(self.test[FEATURES])[:, 1]
+            proba = fitted.predict_proba(self.test[self.features])[:, 1]
             predictions[f"proba_{name}"] = proba
             row = {"model": name, **DelayMetrics.ranking(y_test, proba)}
             if name == best_model:
@@ -314,12 +318,12 @@ class DelayModelTrainer:
         """Importance par permutation sur le test (baisse de PR-AUC quand
         on mélange une variable)."""
         result = permutation_importance(
-            self.fitted_best, self.test[FEATURES], self.test[TARGET],
+            self.fitted_best, self.test[self.features], self.test[TARGET],
             scoring="average_precision", n_repeats=IMPORTANCE_REPEATS,
             random_state=RANDOM_STATE,
         )
         return pd.DataFrame({
-            "feature": FEATURES,
+            "feature": self.features,
             "importance_mean": result.importances_mean,
             "importance_std": result.importances_std,
         }).sort_values("importance_mean", ascending=False)
@@ -338,13 +342,23 @@ class DelayModelTrainer:
             threshold=threshold,
             importance=self.importance(),
             test_predictions=predictions,
+            validation_predictions=self.validation_predictions(best_model),
             sizes=self.sizes(),
         )
 
+    def validation_predictions(self, name: str) -> pd.DataFrame:
+        """Prédictions de validation croisée (commandes des plis de
+        validation), utiles pour l'audit d'équité."""
+        oof = self.oof_predictions[name]
+        mask = ~np.isnan(oof)
+        predictions = self.train.loc[mask, PREDICTION_COLUMNS].copy()
+        predictions[f"proba_{name}"] = oof[mask]
+        return predictions.reset_index(drop=True)
+
     def fit_final(self, best_model: str) -> BaseEstimator:
         """Modèle de production : réentraîné sur toutes les données."""
-        return self.fit(self.candidates[best_model], self.frame[FEATURES],
-                        self.frame[TARGET])
+        return self.fit(self.candidates[best_model],
+                        self.frame[self.features], self.frame[TARGET])
 
 
 class DelayModelReport:
@@ -474,12 +488,14 @@ class DelayModelStore:
 
     @staticmethod
     def save(model: BaseEstimator, results: DelayModelResults,
-             path: Path = MODEL_PATH) -> None:
+             path: Path = MODEL_PATH,
+             region_thresholds: dict[str, float] | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({
             "model": model,
             "model_name": results.best_model,
             "threshold": results.threshold,
+            "region_thresholds": region_thresholds or {},
             "features": FEATURES,
             "test_scores": results.test_scores.loc[
                 results.best_model
