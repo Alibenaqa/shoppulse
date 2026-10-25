@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from shoppulse.database import Database
+from shoppulse.formatting import NumberFormat
 from shoppulse.loader import RAW_TO_CORE_TABLE
 
 BRAZIL_BOX_RAW = (
@@ -236,8 +237,7 @@ class QualityReport:
 
     @staticmethod
     def number(value: int) -> str:
-        """Nombre au format français (espace comme séparateur de milliers)."""
-        return f"{value:,}".replace(",", " ")
+        return NumberFormat.thousands(value)
 
     @staticmethod
     def status(result: CheckResult) -> str:
