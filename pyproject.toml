@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.13",
     "scikit-learn>=1.5",
     "threadpoolctl>=3.5",
+    "torch>=2.4",
     "streamlit>=1.40",
     "plotly>=5.24",
 ]
