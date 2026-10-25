@@ -3,12 +3,14 @@
 Usage : python pipelines/olist_flow.py
 
 Étapes : vérification des sources -> chargement RAW -> transformation CORE
--> contrôles qualité avant/après -> rapport -> analyses SQL. Chaque étape tourne dans sa
+-> contrôles qualité avant/après -> rapport -> analyses SQL -> segmentation
+des clients (table mart.customer_segments). Chaque étape tourne dans sa
 propre transaction et est idempotente : relancer le flux donne le même
 résultat. Les tâches Prefect sont des fonctions (imposé par le framework) qui
 délèguent tout le travail aux classes du package shoppulse.
 """
 
+import pandas as pd
 from prefect import flow, get_run_logger, task
 
 from shoppulse.analysis import SqlAnalysisReport
@@ -16,6 +18,7 @@ from shoppulse.config import PROJECT_ROOT
 from shoppulse.database import Database
 from shoppulse.loader import OlistLoader
 from shoppulse.quality import CheckResult, QualityChecker, QualityReport
+from shoppulse.segmentation import SegmentationJob
 
 QUALITY_REPORT_PATH = PROJECT_ROOT / "docs" / "quality_report.md"
 SQL_ANALYSIS_PATH = PROJECT_ROOT / "docs" / "sql_analysis.md"
@@ -61,6 +64,11 @@ def run_sql_analysis() -> None:
         SqlAnalysisReport(database).write(SQL_ANALYSIS_PATH)
 
 
+@task(name="segmenter_clients")
+def segment_customers() -> pd.DataFrame:
+    return SegmentationJob().run()
+
+
 @flow(name="olist_etl", log_prints=True)
 def olist_etl() -> None:
     logger = get_run_logger()
@@ -75,6 +83,8 @@ def olist_etl() -> None:
         raise RuntimeError(f"Contrôles qualité bloquants en échec : {names}")
     run_sql_analysis()
     logger.info("Analyses SQL écrites dans %s", SQL_ANALYSIS_PATH)
+    personas = segment_customers()
+    logger.info("Segmentation enregistrée :\n%s", personas.round(1))
 
 
 if __name__ == "__main__":
