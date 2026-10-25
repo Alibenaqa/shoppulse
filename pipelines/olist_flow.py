@@ -3,7 +3,7 @@
 Usage : python pipelines/olist_flow.py
 
 Étapes : vérification des sources -> chargement RAW -> transformation CORE
--> contrôles qualité avant/après -> rapport. Chaque étape tourne dans sa
+-> contrôles qualité avant/après -> rapport -> analyses SQL. Chaque étape tourne dans sa
 propre transaction et est idempotente : relancer le flux donne le même
 résultat. Les tâches Prefect sont des fonctions (imposé par le framework) qui
 délèguent tout le travail aux classes du package shoppulse.
@@ -11,12 +11,14 @@ délèguent tout le travail aux classes du package shoppulse.
 
 from prefect import flow, get_run_logger, task
 
+from shoppulse.analysis import SqlAnalysisReport
 from shoppulse.config import PROJECT_ROOT
 from shoppulse.database import Database
 from shoppulse.loader import OlistLoader
 from shoppulse.quality import CheckResult, QualityChecker, QualityReport
 
 QUALITY_REPORT_PATH = PROJECT_ROOT / "docs" / "quality_report.md"
+SQL_ANALYSIS_PATH = PROJECT_ROOT / "docs" / "sql_analysis.md"
 TASK_RETRIES = 2
 
 
@@ -53,6 +55,12 @@ def write_report(results: list[CheckResult],
     QualityReport(results, volumes).write(QUALITY_REPORT_PATH)
 
 
+@task(name="analyser_sql")
+def run_sql_analysis() -> None:
+    with Database() as database:
+        SqlAnalysisReport(database).write(SQL_ANALYSIS_PATH)
+
+
 @flow(name="olist_etl", log_prints=True)
 def olist_etl() -> None:
     logger = get_run_logger()
@@ -65,6 +73,8 @@ def olist_etl() -> None:
     if failures:
         names = ", ".join(result.check.name for result in failures)
         raise RuntimeError(f"Contrôles qualité bloquants en échec : {names}")
+    run_sql_analysis()
+    logger.info("Analyses SQL écrites dans %s", SQL_ANALYSIS_PATH)
 
 
 if __name__ == "__main__":

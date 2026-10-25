@@ -1,6 +1,6 @@
 # Rapport qualité des données
 
-Généré automatiquement par le pipeline le 2026-10-25 18:42. Ne pas modifier à la main.
+Généré automatiquement par le pipeline le 2026-10-25 18:46. Ne pas modifier à la main.
 
 ## Volumes par table
 
