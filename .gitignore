@@ -22,3 +22,6 @@ models/
 # Divers
 .DS_Store
 .ipynb_checkpoints/
+
+# Outils locaux
+.claude/
