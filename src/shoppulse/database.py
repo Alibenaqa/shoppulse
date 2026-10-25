@@ -50,6 +50,17 @@ class Database:
         """Vide une table."""
         self.connection.execute(f"TRUNCATE {table}")
 
+    def columns(self, table: str) -> list[str]:
+        """Noms des colonnes d'une table, dans l'ordre de définition."""
+        schema, name = table.split(".")
+        rows = self.connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s "
+            "ORDER BY ordinal_position",
+            (schema, name),
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def count_rows(self, table: str) -> int:
         """Nombre de lignes d'une table."""
         row = self.connection.execute(
