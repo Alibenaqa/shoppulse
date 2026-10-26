@@ -91,6 +91,9 @@ ROUTE_WINDOW = pd.Timedelta(days=60)
 PLATFORM_WINDOW = pd.Timedelta(days=14)
 LOAD_WINDOW = pd.Timedelta(days=7)
 DATA_START = "2017-01-01"
+# Même précision des dates des deux côtés des jointures temporelles, quelle
+# que soit leur origine (base, fichiers, requête de l'API).
+TIME_RESOLUTION = "datetime64[ns]"
 DATA_END = "2018-09-01"
 
 
@@ -110,6 +113,7 @@ class TimeAwareHistory:
             events[keys + [time, value]]
             .dropna(subset=[time, value])
             .rename(columns={time: "event_time"})
+            .astype({"event_time": TIME_RESOLUTION})
             .sort_values("event_time")
         )
         grouped = self.events.groupby(keys)[value]
@@ -120,7 +124,8 @@ class TimeAwareHistory:
                   at: pd.Series) -> np.ndarray:
         """Cumuls (somme, effectif) juste avant chaque date `at`."""
         lookup = queries[self.keys].assign(
-            at=at.to_numpy(), row=np.arange(len(queries))
+            at=at.to_numpy().astype(TIME_RESOLUTION),
+            row=np.arange(len(queries)),
         ).sort_values("at")
         merged = pd.merge_asof(
             lookup,
@@ -154,7 +159,12 @@ class DelayFeatureBuilder:
 
     def build(self) -> pd.DataFrame:
         """Table complète : identifiants, variables, cible et région."""
-        frame = self.prepare(self.load())
+        return self.build_from(self.load())
+
+    def build_from(self, raw: pd.DataFrame) -> pd.DataFrame:
+        """Même calcul à partir de commandes déjà chargées (colonnes de
+        DELAY_ORDERS_SQL)."""
+        frame = self.prepare(raw)
         frame = self.add_geography(frame)
         frame = self.add_history(frame, DelayHistory(frame))
         frame = frame[
