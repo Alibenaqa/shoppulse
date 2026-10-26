@@ -124,7 +124,7 @@ class TimeAwareHistory:
                   at: pd.Series) -> np.ndarray:
         """Cumuls (somme, effectif) juste avant chaque date `at`."""
         lookup = queries[self.keys].assign(
-            at=at.to_numpy().astype(TIME_RESOLUTION),
+            at=at.to_numpy().astype(self.events["event_time"].dtype),
             row=np.arange(len(queries)),
         ).sort_values("at")
         merged = pd.merge_asof(
