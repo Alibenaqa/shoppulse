@@ -1,13 +1,17 @@
 """Segmentation clients : scores RFM, clustering K-means et personas."""
 
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+from shoppulse.config import MODELS_DIR
 from shoppulse.warehouse import DataWarehouse
 
 RFM_SQL = """
@@ -32,6 +36,7 @@ WHERE o.status NOT IN ('canceled', 'unavailable')
 GROUP BY c.customer_unique_id
 """
 RFM_COLUMNS = ["recency", "frequency", "monetary"]
+SEGMENTATION_PATH = MODELS_DIR / "segmentation.joblib"
 K_CANDIDATES = range(3, 8)
 SILHOUETTE_SAMPLE = 15000
 RANDOM_STATE = 42
@@ -86,6 +91,7 @@ class CustomerSegmenter:
         self.scaler = StandardScaler()
         self.model: KMeans | None = None
         self.silhouettes: dict[int, float] = {}
+        self.personas: dict[int, str] = {}
 
     def features(self, frame: pd.DataFrame) -> np.ndarray:
         return np.log1p(frame[RFM_COLUMNS].to_numpy(dtype=float))
@@ -113,9 +119,31 @@ class CustomerSegmenter:
                             random_state=RANDOM_STATE)
         segmented = frame.copy()
         segmented["cluster"] = self.model.fit_predict(features)
-        personas = self.name_personas(self.profile(segmented))
-        segmented["persona"] = segmented["cluster"].map(personas)
+        self.personas = self.name_personas(self.profile(segmented))
+        segmented["persona"] = segmented["cluster"].map(self.personas)
         return segmented
+
+    def predict(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Cluster et persona de nouveaux clients (colonnes recency,
+        frequency, monetary), avec le modèle déjà entraîné."""
+        clusters = self.model.predict(
+            self.scaler.transform(self.features(frame))
+        )
+        return pd.DataFrame({
+            "cluster": clusters,
+            "persona": [self.personas[cluster] for cluster in clusters],
+        }, index=frame.index)
+
+    def save(self, path: Path = SEGMENTATION_PATH) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({
+            "segmenter": self,
+            "trained_at": datetime.now().isoformat(timespec="seconds"),
+        }, path)
+
+    @staticmethod
+    def load(path: Path = SEGMENTATION_PATH) -> "CustomerSegmenter":
+        return joblib.load(path)["segmenter"]
 
     @staticmethod
     def profile(segmented: pd.DataFrame,
@@ -223,6 +251,21 @@ DEFAULT_CAMPAIGNS = [
 ]
 
 
+class CampaignCatalog:
+    """Campagne recommandée pour chaque persona (aucune pour les petits
+    acheteurs perdus, trop peu rentables)."""
+
+    @staticmethod
+    def for_persona(persona: str,
+                    campaigns: list[Campaign] | None = None
+                    ) -> Campaign | None:
+        return next(
+            (campaign for campaign in campaigns or DEFAULT_CAMPAIGNS
+             if campaign.persona == persona),
+            None,
+        )
+
+
 class CampaignSimulator:
     """Chiffre les campagnes à partir des segments obtenus."""
 
@@ -257,14 +300,15 @@ class CampaignSimulator:
 
 
 class SegmentationJob:
-    """Calcule la segmentation et l'enregistre dans mart.customer_segments."""
+    """Calcule la segmentation, l'enregistre dans mart.customer_segments
+    et sauvegarde le modèle pour l'API."""
 
     def __init__(self, warehouse: DataWarehouse | None = None) -> None:
         self.warehouse = warehouse or DataWarehouse()
 
     def run(self) -> pd.DataFrame:
-        segmented = CustomerSegmenter().fit_predict(
-            RfmTable(self.warehouse).load()
-        )
+        segmenter = CustomerSegmenter()
+        segmented = segmenter.fit_predict(RfmTable(self.warehouse).load())
         self.warehouse.write(segmented, "mart", "customer_segments")
+        segmenter.save()
         return CustomerSegmenter.profile(segmented, by="persona")
