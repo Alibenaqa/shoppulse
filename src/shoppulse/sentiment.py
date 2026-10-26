@@ -18,8 +18,6 @@ tester) :
 """
 
 import copy
-import re
-import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -45,8 +43,9 @@ from sklearn.pipeline import Pipeline
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 
-from shoppulse.config import PROJECT_ROOT
+from shoppulse.config import MODELS_DIR
 from shoppulse.formatting import NumberFormat
+from shoppulse.text import TextNormalizer
 from shoppulse.warehouse import DataWarehouse
 
 REVIEWS_SQL = """
@@ -66,31 +65,14 @@ POSITIVE_MIN_SCORE = 4
 TRAIN_SHARE = 0.70
 VALIDATION_SHARE = 0.15
 RANDOM_STATE = 42
-TOKEN_PATTERN = r"[a-zà-ÿ0-9]+|[!?]"
 TFIDF_C_GRID = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
 LEARNING_CURVE_SHARES = [0.1, 0.25, 0.5, 1.0]
 MIN_NEURAL_GAIN = 0.01
 TOP_TERMS = 15
 TFIDF = "tfidf_regression_logistique"
 NEURAL = "reseau_gru"
-MODELS_DIR = PROJECT_ROOT / "models"
 TFIDF_PATH = MODELS_DIR / "sentiment_tfidf.joblib"
 NEURAL_PATH = MODELS_DIR / "sentiment_gru.pt"
-
-
-class TextNormalizer:
-    """Nettoyage et découpage en mots des avis."""
-
-    @staticmethod
-    def clean(text: str) -> str:
-        """Minuscules, accents normalisés (NFC), espaces uniformisés."""
-        text = unicodedata.normalize("NFC", text).lower()
-        return re.sub(r"\s+", " ", text).strip()
-
-    @staticmethod
-    def tokenize(text: str) -> list[str]:
-        """Mots (avec accents) et ponctuations expressives (! ?)."""
-        return re.findall(TOKEN_PATTERN, TextNormalizer.clean(text))
 
 
 class ReviewDataset:
