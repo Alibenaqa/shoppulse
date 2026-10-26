@@ -1,4 +1,4 @@
-"""Pipeline d'entraînement des modèles, orchestré avec Prefect.
+"""Pipeline d'entraînement des modèles (retard et sentiment), avec Prefect.
 
 Usage : python pipelines/train_flow.py
 (à lancer après pipelines/olist_flow.py, qui alimente la base)
@@ -21,9 +21,16 @@ from shoppulse.delay_model import (
 )
 from shoppulse.fairness import DelayFairnessAudit, FairnessReport
 from shoppulse.features import DelayFeatureBuilder
+from shoppulse.sentiment import (
+    ReviewDataset,
+    SentimentExperiment,
+    SentimentReport,
+    SentimentResults,
+)
 
 DELAY_REPORT_PATH = PROJECT_ROOT / "docs" / "delay_model_report.md"
 FAIRNESS_REPORT_PATH = PROJECT_ROOT / "docs" / "fairness_report.md"
+SENTIMENT_REPORT_PATH = PROJECT_ROOT / "docs" / "sentiment_report.md"
 
 
 @task(name="construire_variables_retard", cache_policy=NO_CACHE)
@@ -55,6 +62,24 @@ def write_delay_report(results: DelayModelResults) -> None:
     DelayModelReport(results).write(DELAY_REPORT_PATH)
 
 
+@task(name="construire_jeu_avis", cache_policy=NO_CACHE)
+def build_review_dataset() -> pd.DataFrame:
+    return ReviewDataset().load()
+
+
+@task(name="entrainer_modeles_sentiment", cache_policy=NO_CACHE)
+def train_sentiment_models(reviews: pd.DataFrame) -> SentimentResults:
+    experiment = SentimentExperiment(reviews)
+    results = experiment.run()
+    experiment.save_best(results)
+    return results
+
+
+@task(name="ecrire_rapport_sentiment", cache_policy=NO_CACHE)
+def write_sentiment_report(results: SentimentResults) -> None:
+    SentimentReport(results).write(SENTIMENT_REPORT_PATH)
+
+
 @flow(name="ml_training", log_prints=True)
 def ml_training() -> None:
     logger = get_run_logger()
@@ -67,6 +92,10 @@ def ml_training() -> None:
     write_delay_report(results)
     logger.info("Modèle enregistré dans %s, rapports dans %s et %s",
                 MODEL_PATH, DELAY_REPORT_PATH, FAIRNESS_REPORT_PATH)
+    sentiment = train_sentiment_models(build_review_dataset())
+    write_sentiment_report(sentiment)
+    logger.info("Modèle de sentiment retenu : %s, rapport dans %s",
+                sentiment.best_model, SENTIMENT_REPORT_PATH)
 
 
 if __name__ == "__main__":
