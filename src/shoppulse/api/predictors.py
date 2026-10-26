@@ -1,5 +1,6 @@
 """Chargement des modèles entraînés et prédictions de l'API."""
 
+import pickle
 from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
@@ -26,6 +27,10 @@ DELAY_MODEL_FILE = "delay_model.joblib"
 DELAY_SNAPSHOT_FILE = "delay_snapshot.joblib"
 SENTIMENT_FILE = "sentiment_model.joblib"
 SEGMENTATION_FILE = "segmentation.joblib"
+# Fichier absent, dépendance manquante ou modèle enregistré avec d'autres
+# versions : le modèle concerné est désactivé, les autres restent servis.
+LOAD_ERRORS = (OSError, ImportError, KeyError, ValueError, TypeError,
+               AttributeError, EOFError, pickle.UnpicklingError)
 
 
 class ModelUnavailableError(RuntimeError):
@@ -160,7 +165,7 @@ class ModelRegistry:
         for name, loader in self.LOADERS.items():
             try:
                 self.predictors[name] = loader(models_dir)
-            except (FileNotFoundError, KeyError, ValueError) as error:
+            except LOAD_ERRORS as error:
                 self.errors[name] = f"{type(error).__name__}: {error}"
 
     def require(self, name: str) -> object:
