@@ -303,12 +303,14 @@ class SegmentationJob:
     """Calcule la segmentation, l'enregistre dans mart.customer_segments
     et sauvegarde le modèle pour l'API."""
 
-    def __init__(self, warehouse: DataWarehouse | None = None) -> None:
+    def __init__(self, warehouse: DataWarehouse | None = None,
+                 model_path: Path = SEGMENTATION_PATH) -> None:
         self.warehouse = warehouse or DataWarehouse()
+        self.model_path = model_path
 
     def run(self) -> pd.DataFrame:
         segmenter = CustomerSegmenter()
         segmented = segmenter.fit_predict(RfmTable(self.warehouse).load())
         self.warehouse.write(segmented, "mart", "customer_segments")
-        segmenter.save()
+        segmenter.save(self.model_path)
         return CustomerSegmenter.profile(segmented, by="persona")
