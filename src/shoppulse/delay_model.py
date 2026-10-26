@@ -46,12 +46,13 @@ from sklearn.preprocessing import (
 )
 from threadpoolctl import threadpool_limits
 
-from shoppulse.config import PROJECT_ROOT
+from shoppulse.config import MODELS_DIR
 from shoppulse.features import (
     CATEGORICAL_FEATURES,
     FEATURES,
     NUMERIC_FEATURES,
     TARGET,
+    DelayServingSnapshot,
 )
 from shoppulse.formatting import NumberFormat
 
@@ -60,7 +61,8 @@ CV_SPLITS = 5
 TOP_SHARE = 0.10
 RANDOM_STATE = 42
 IMPORTANCE_REPEATS = 5
-MODEL_PATH = PROJECT_ROOT / "models" / "delay_model.joblib"
+MODEL_PATH = MODELS_DIR / "delay_model.joblib"
+SNAPSHOT_PATH = MODELS_DIR / "delay_snapshot.joblib"
 LOG_FEATURES = [
     "distance_km", "n_items", "total_weight_g", "order_value",
     "freight_value", "seller_past_orders", "seller_dispatch_days",
@@ -505,4 +507,15 @@ class DelayModelStore:
 
     @staticmethod
     def load(path: Path = MODEL_PATH) -> dict:
+        return joblib.load(path)
+
+    @staticmethod
+    def save_snapshot(snapshot: DelayServingSnapshot,
+                      path: Path = SNAPSHOT_PATH) -> None:
+        """Historiques et référentiels dont l'API a besoin."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(snapshot, path)
+
+    @staticmethod
+    def load_snapshot(path: Path = SNAPSHOT_PATH) -> DelayServingSnapshot:
         return joblib.load(path)

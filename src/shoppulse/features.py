@@ -60,6 +60,9 @@ WHERE o.status = 'delivered'
     AND o.delivered_customer_date IS NOT NULL
 """
 
+GEOLOCATION_SQL = "SELECT zip_code_prefix, lat, lng FROM core.geolocation"
+SELLERS_SQL = "SELECT seller_id, zip_code_prefix, state FROM core.sellers"
+
 TARGET = "is_late"
 NUMERIC_FEATURES = [
     "distance_km",
@@ -153,9 +156,7 @@ class DelayFeatureBuilder:
         """Table complète : identifiants, variables, cible et région."""
         frame = self.prepare(self.load())
         frame = self.add_geography(frame)
-        frame = self.add_seller_history(frame)
-        frame = self.add_route_promise(frame)
-        frame = self.add_platform_context(frame)
+        frame = self.add_history(frame, DelayHistory(frame))
         frame = frame[
             (frame["purchase_timestamp"] >= DATA_START)
             & (frame["purchase_timestamp"] < DATA_END)
@@ -223,73 +224,171 @@ class DelayFeatureBuilder:
         return frame
 
     @staticmethod
-    def add_seller_history(frame: pd.DataFrame) -> pd.DataFrame:
-        """Historique du vendeur connu à l'achat : volume, taux de retard
-        (lissé vers 5 %) et délai habituel de remise au transporteur (lissé
-        vers la moyenne récente de la plateforme)."""
-        frame = frame.copy()
-        at = frame["purchase_timestamp"]
-        late = TimeAwareHistory(frame, ["seller_id"], "known_at",
-                                TARGET).window(frame, at)
-        frame["seller_past_orders"] = late["count"]
-        frame["seller_past_late_rate"] = TimeAwareHistory.smoothed_mean(
-            late, SELLER_PRIOR_RATE
-        )
-        dispatch = TimeAwareHistory(frame, ["seller_id"],
-                                    "delivered_carrier_date",
-                                    "dispatch_days").window(frame, at)
-        platform_dispatch = TimeAwareHistory(
-            frame, ["platform"], "delivered_carrier_date", "dispatch_days"
-        ).window(frame, at, ROUTE_WINDOW)
-        prior = platform_dispatch["sum"] / platform_dispatch["count"]
-        frame["seller_dispatch_days"] = TimeAwareHistory.smoothed_mean(
-            dispatch, prior
-        )
-        return frame
-
-    @staticmethod
-    def add_route_promise(frame: pd.DataFrame) -> pd.DataFrame:
-        """Délai réel récent du trajet (état vendeur -> état client) et
-        marge de la promesse : délai promis - délai réel attendu.
-
-        Le délai du trajet est la moyenne des livraisons des 60 derniers
-        jours, lissée vers celle de l'état du client puis de la plateforme.
-        """
-        frame = frame.copy()
-        at = frame["purchase_timestamp"]
-        windows = {
-            keys[0]: TimeAwareHistory(
-                frame, keys, "delivered_customer_date", "delivery_days"
-            ).window(frame, at, ROUTE_WINDOW)
-            for keys in (["platform"], ["customer_state"], ["route"])
-        }
-        platform = windows["platform"]
-        platform_mean = platform["sum"] / platform["count"]
-        state_mean = TimeAwareHistory.smoothed_mean(
-            windows["customer_state"], platform_mean
-        )
-        frame["route_expected_days"] = TimeAwareHistory.smoothed_mean(
-            windows["route"], state_mean
-        )
+    def add_history(frame: pd.DataFrame,
+                    history: "DelayHistory") -> pd.DataFrame:
+        """Historiques connus à la date d'achat de chaque commande, et marge
+        de la promesse (délai promis - délai réel attendu du trajet)."""
+        frame = frame.join(history.features(frame))
         frame["promise_slack_days"] = (
             frame["estimated_days"] - frame["route_expected_days"]
         )
         return frame
 
-    @staticmethod
-    def add_platform_context(frame: pd.DataFrame) -> pd.DataFrame:
-        """État du réseau à l'achat : délai moyen des livraisons des 14
-        derniers jours et nombre de commandes des 7 derniers jours."""
-        frame = frame.copy()
-        at = frame["purchase_timestamp"]
-        speed = TimeAwareHistory(
-            frame, ["platform"], "delivered_customer_date", "delivery_days"
-        ).window(frame, at, PLATFORM_WINDOW)
-        frame["platform_delivery_days_14d"] = (
+
+class DelayHistory:
+    """Historiques connus à une date donnée : vendeur, trajet, plateforme.
+
+    Construit une fois sur les commandes livrées, il sert à l'entraînement
+    (une requête par commande, à sa date d'achat) comme à l'API (une requête
+    pour la nouvelle commande) : les variables sont donc calculées
+    exactement de la même façon des deux côtés.
+    """
+
+    def __init__(self, frame: pd.DataFrame) -> None:
+        self.seller_late = TimeAwareHistory(frame, ["seller_id"], "known_at",
+                                            TARGET)
+        self.seller_dispatch = TimeAwareHistory(
+            frame, ["seller_id"], "delivered_carrier_date", "dispatch_days"
+        )
+        self.platform_dispatch = TimeAwareHistory(
+            frame, ["platform"], "delivered_carrier_date", "dispatch_days"
+        )
+        self.deliveries = {
+            keys[0]: TimeAwareHistory(frame, keys, "delivered_customer_date",
+                                      "delivery_days")
+            for keys in (["platform"], ["customer_state"], ["route"])
+        }
+        self.orders = TimeAwareHistory(frame, ["platform"],
+                                       "purchase_timestamp", "one")
+
+    def features(self, queries: pd.DataFrame) -> pd.DataFrame:
+        """Variables d'historique de chaque requête (colonnes seller_id,
+        customer_state, route, platform et purchase_timestamp).
+
+        - vendeur : volume, taux de retard (lissé vers 5 %) et délai de
+          remise au transporteur (lissé vers la moyenne de la plateforme) ;
+        - trajet : délai réel moyen des 60 derniers jours, lissé vers celui
+          de l'état du client puis de la plateforme ;
+        - plateforme : délai moyen des livraisons des 14 derniers jours et
+          nombre de commandes des 7 derniers jours.
+        """
+        at = queries["purchase_timestamp"]
+        result = pd.DataFrame(index=queries.index)
+        late = self.seller_late.window(queries, at)
+        result["seller_past_orders"] = late["count"]
+        result["seller_past_late_rate"] = TimeAwareHistory.smoothed_mean(
+            late, SELLER_PRIOR_RATE
+        )
+        dispatch = self.platform_dispatch.window(queries, at, ROUTE_WINDOW)
+        result["seller_dispatch_days"] = TimeAwareHistory.smoothed_mean(
+            self.seller_dispatch.window(queries, at),
+            dispatch["sum"] / dispatch["count"],
+        )
+        windows = {
+            name: history.window(queries, at, ROUTE_WINDOW)
+            for name, history in self.deliveries.items()
+        }
+        platform_mean = windows["platform"]["sum"] / windows["platform"][
+            "count"
+        ]
+        state_mean = TimeAwareHistory.smoothed_mean(
+            windows["customer_state"], platform_mean
+        )
+        result["route_expected_days"] = TimeAwareHistory.smoothed_mean(
+            windows["route"], state_mean
+        )
+        speed = self.deliveries["platform"].window(queries, at,
+                                                   PLATFORM_WINDOW)
+        result["platform_delivery_days_14d"] = (
             speed["sum"] / speed["count"]
         ).where(speed["count"] > 0)
-        load = TimeAwareHistory(
-            frame, ["platform"], "purchase_timestamp", "one"
-        ).window(frame, at, LOAD_WINDOW)
-        frame["platform_orders_7d"] = load["count"]
-        return frame
+        result["platform_orders_7d"] = self.orders.window(
+            queries, at, LOAD_WINDOW
+        )["count"]
+        return result
+
+
+class UnknownSellerError(KeyError):
+    """Le vendeur demandé n'existe pas dans les données chargées."""
+
+
+class DelayServingSnapshot:
+    """Ce dont l'API a besoin pour calculer les variables d'une nouvelle
+    commande : historiques, coordonnées des codes postaux, vendeurs connus
+    et date de référence. Les données s'arrêtant fin août 2018, l'état
+    « actuel » du réseau est celui de cette date."""
+
+    def __init__(self, history: DelayHistory, geolocation: pd.DataFrame,
+                 sellers: pd.DataFrame,
+                 reference_time: pd.Timestamp) -> None:
+        self.history = history
+        self.geolocation = geolocation
+        self.sellers = sellers
+        self.reference_time = reference_time
+
+    @staticmethod
+    def build(warehouse: DataWarehouse | None = None
+              ) -> "DelayServingSnapshot":
+        warehouse = warehouse or DataWarehouse()
+        builder = DelayFeatureBuilder(warehouse)
+        frame = builder.prepare(builder.load())
+        return DelayServingSnapshot(
+            DelayHistory(frame),
+            warehouse.query(GEOLOCATION_SQL).set_index("zip_code_prefix"),
+            warehouse.query(SELLERS_SQL).set_index("seller_id"),
+            pd.Timestamp(DATA_END),
+        )
+
+    def coordinates(self, zip_code_prefix: str) -> tuple[float, float]:
+        if zip_code_prefix not in self.geolocation.index:
+            return np.nan, np.nan
+        point = self.geolocation.loc[zip_code_prefix]
+        return float(point["lat"]), float(point["lng"])
+
+    def features(self, order: dict,
+                 at: pd.Timestamp | None = None) -> pd.DataFrame:
+        """Variables du modèle pour une commande décrite par : code postal
+        et état du client, identifiant du vendeur, délai promis (jours) et
+        articles (prix, frais de port, poids). Les historiques sont ceux
+        connus à la date `at` (par défaut, la date de référence)."""
+        if order["seller_id"] not in self.sellers.index:
+            raise UnknownSellerError(order["seller_id"])
+        seller = self.sellers.loc[order["seller_id"]]
+        state = order["customer_state"]
+        query = pd.DataFrame([{
+            "seller_id": order["seller_id"],
+            "customer_state": state,
+            "route": f"{seller['state']}>{state}",
+            "platform": "all",
+            "purchase_timestamp": at or self.reference_time,
+        }])
+        history = self.history.features(query).iloc[0].to_dict()
+        customer_lat, customer_lng = self.coordinates(
+            order["customer_zip_prefix"]
+        )
+        seller_lat, seller_lng = self.coordinates(seller["zip_code_prefix"])
+        items = order["items"]
+        weights = [item["weight_g"] for item in items
+                   if item.get("weight_g") is not None]
+        row = {
+            "distance_km": float(DelayFeatureBuilder.haversine_km(
+                customer_lat, customer_lng, seller_lat, seller_lng
+            )),
+            "same_state": int(seller["state"] == state),
+            "estimated_days": order["estimated_days"],
+            "n_items": len(items),
+            "total_weight_g": float(sum(weights)) if weights else np.nan,
+            "order_value": float(sum(item["price"] for item in items)),
+            "freight_value": float(sum(item["freight_value"]
+                                       for item in items)),
+            "customer_state": state,
+            **history,
+        }
+        row["promise_slack_days"] = (
+            row["estimated_days"] - row["route_expected_days"]
+        )
+        features = pd.DataFrame([row])[FEATURES]
+        features["customer_state"] = features["customer_state"].astype(
+            STATE_DTYPE
+        )
+        return features

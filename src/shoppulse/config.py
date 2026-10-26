@@ -11,6 +11,10 @@ SQL_DIR = PROJECT_ROOT / "sql"
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+# Dossier des modèles entraînés (surchargé dans l'image Docker).
+MODELS_DIR = Path(os.getenv("SHOPPULSE_MODELS_DIR",
+                            PROJECT_ROOT / "models"))
+
 
 class DatabaseSettings:
     """Paramètres de connexion lus depuis les variables d'environnement."""
