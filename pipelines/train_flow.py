@@ -19,9 +19,11 @@ from shoppulse.delay_model import (
     DelayModelStore,
     DelayModelTrainer,
 )
+from shoppulse.fairness import DelayFairnessAudit, FairnessReport
 from shoppulse.features import DelayFeatureBuilder
 
 DELAY_REPORT_PATH = PROJECT_ROOT / "docs" / "delay_model_report.md"
+FAIRNESS_REPORT_PATH = PROJECT_ROOT / "docs" / "fairness_report.md"
 
 
 @task(name="construire_variables_retard", cache_policy=NO_CACHE)
@@ -34,11 +36,18 @@ def compare_delay_models(frame: pd.DataFrame) -> DelayModelResults:
     return DelayModelTrainer(frame).run()
 
 
+@task(name="auditer_equite_retard", cache_policy=NO_CACHE)
+def audit_delay_fairness(results: DelayModelResults) -> dict[str, float]:
+    audit = DelayFairnessAudit(results)
+    FairnessReport(audit.audits()).write(FAIRNESS_REPORT_PATH)
+    return audit.region_thresholds.thresholds
+
+
 @task(name="entrainer_modele_retard", cache_policy=NO_CACHE)
-def train_final_delay_model(frame: pd.DataFrame,
-                            results: DelayModelResults) -> None:
+def train_final_delay_model(frame: pd.DataFrame, results: DelayModelResults,
+                            region_thresholds: dict[str, float]) -> None:
     model = DelayModelTrainer(frame).fit_final(results.best_model)
-    DelayModelStore.save(model, results, MODEL_PATH)
+    DelayModelStore.save(model, results, MODEL_PATH, region_thresholds)
 
 
 @task(name="ecrire_rapport_retard", cache_policy=NO_CACHE)
@@ -53,10 +62,11 @@ def ml_training() -> None:
     results = compare_delay_models(frame)
     logger.info("Modèle de retard retenu : %s (seuil %.3f)",
                 results.best_model, results.threshold)
-    train_final_delay_model(frame, results)
+    region_thresholds = audit_delay_fairness(results)
+    train_final_delay_model(frame, results, region_thresholds)
     write_delay_report(results)
-    logger.info("Modèle enregistré dans %s, rapport dans %s",
-                MODEL_PATH, DELAY_REPORT_PATH)
+    logger.info("Modèle enregistré dans %s, rapports dans %s et %s",
+                MODEL_PATH, DELAY_REPORT_PATH, FAIRNESS_REPORT_PATH)
 
 
 if __name__ == "__main__":
