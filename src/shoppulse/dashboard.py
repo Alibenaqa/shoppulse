@@ -173,4 +173,5 @@ class Dashboard:
         return f"{100 * (current - previous) / previous:+.1f} %"
 
 
-Dashboard().run()
+if __name__ == "__main__":
+    Dashboard().run()

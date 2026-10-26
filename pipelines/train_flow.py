@@ -20,7 +20,7 @@ from shoppulse.delay_model import (
     DelayModelTrainer,
 )
 from shoppulse.fairness import DelayFairnessAudit, FairnessReport
-from shoppulse.features import DelayFeatureBuilder
+from shoppulse.features import DelayFeatureBuilder, DelayServingSnapshot
 from shoppulse.sentiment import (
     ReviewDataset,
     SentimentExperiment,
@@ -57,6 +57,11 @@ def train_final_delay_model(frame: pd.DataFrame, results: DelayModelResults,
     DelayModelStore.save(model, results, MODEL_PATH, region_thresholds)
 
 
+@task(name="preparer_service_retard", cache_policy=NO_CACHE)
+def prepare_delay_serving() -> None:
+    DelayModelStore.save_snapshot(DelayServingSnapshot.build())
+
+
 @task(name="ecrire_rapport_retard", cache_policy=NO_CACHE)
 def write_delay_report(results: DelayModelResults) -> None:
     DelayModelReport(results).write(DELAY_REPORT_PATH)
@@ -89,6 +94,7 @@ def ml_training() -> None:
                 results.best_model, results.threshold)
     region_thresholds = audit_delay_fairness(results)
     train_final_delay_model(frame, results, region_thresholds)
+    prepare_delay_serving()
     write_delay_report(results)
     logger.info("Modèle enregistré dans %s, rapports dans %s et %s",
                 MODEL_PATH, DELAY_REPORT_PATH, FAIRNESS_REPORT_PATH)
