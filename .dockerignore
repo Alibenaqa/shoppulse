@@ -1,0 +1,19 @@
+# Seuls pyproject.toml, src/ et infra/ servent à construire l'image.
+.git
+.github
+.venv
+.claude
+.env
+data
+models
+notebooks
+docs
+dashboards
+tests
+pipelines
+sql
+**/__pycache__
+**/*.egg-info
+.pytest_cache
+.ruff_cache
+.coverage

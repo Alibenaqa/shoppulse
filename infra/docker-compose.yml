@@ -13,5 +13,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # API des modèles : lancer d'abord les pipelines (models/ rempli), puis
+  #   docker compose -f infra/docker-compose.yml up -d --build api
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: shoppulse-api
+    container_name: shoppulse-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../models:/app/models:ro
+
 volumes:
   pgdata:
