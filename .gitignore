@@ -22,3 +22,8 @@ models/
 # Divers
 .DS_Store
 .ipynb_checkpoints/
+
+# Dossiers de configuration locale des outils (sauf ceux du projet)
+.*/
+!.github/
+!.streamlit/

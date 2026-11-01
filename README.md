@@ -90,11 +90,11 @@ Puis, sur tous les systèmes :
 ```bash
 pip install -e ".[pipeline,dashboard,notebooks,dev]"
 cp .env.example .env               # Windows : copy .env.example .env
-docker compose -f infra/docker-compose.yml --env-file .env up -d postgres
+docker compose -f infra/docker-compose.yml --env-file .env up -d --wait postgres
 ```
 
-Si le port 5432 est déjà pris sur votre machine, changez `POSTGRES_PORT`
-dans `.env`.
+`--wait` rend la main quand la base est prête. Si le port 5432 est déjà
+pris sur votre machine, changez `POSTGRES_PORT` dans `.env`.
 
 **Données** : téléchargez le jeu
 [Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
@@ -207,7 +207,7 @@ et par région, quatre graphiques.
 ```
 shoppulse/
 ├── README.md
-├── docs/                 # note éthique, rapports générés par les pipelines
+├── docs/                 # cadrage, arbitrage, architecture, éthique, retro.md, rapports
 ├── data/
 │   ├── raw/              # données complètes (jamais versionnées)
 │   └── samples/          # échantillons < 1 Mo (pipelines/make_samples.py)
@@ -225,13 +225,18 @@ shoppulse/
 
 | Document | Contenu |
 |---|---|
+| [docs/cadrage.md](docs/cadrage.md) | note de cadrage : enjeux, objectifs, utilisateurs, feuille de route, évolutions |
+| [docs/arbitrage.md](docs/arbitrage.md) | arbitrage Prefect ou Airflow (coût, délai, performance, pérennité) |
+| [docs/architecture.md](docs/architecture.md) | schéma d'architecture cible sur une page |
 | [docs/ethique.md](docs/ethique.md) | biais par région, conformité RGPD, limites d'usage |
+| [docs/retro.md](docs/retro.md) | rétrospective : écarts avec la feuille de route |
 | [docs/quality_report.md](docs/quality_report.md) | volumes et contrôles qualité avant/après |
 | [docs/sql_analysis.md](docs/sql_analysis.md) | résultats des 8 requêtes SQL d'analyse |
 | [docs/delay_model_report.md](docs/delay_model_report.md) | comparaison des modèles de retard |
 | [docs/fairness_report.md](docs/fairness_report.md) | audit d'équité par région |
 | [docs/sentiment_report.md](docs/sentiment_report.md) | comparaison des modèles de sentiment |
 | [notebooks/](notebooks/) | 01 EDA · 02 tests statistiques · 03 segmentation · 04 modèle de retard · 05 audit d'équité · 06 sentiment |
+| [Backlog GitHub Projects](https://github.com/users/Alibenaqa/projects/1) | tâches par lot et les deux points d'étape ([issues](https://github.com/Alibenaqa/shoppulse/issues?q=is%3Aissue)) |
 
 ## Données et éthique
 
