@@ -1,9 +1,6 @@
 # Seuls pyproject.toml, src/ et infra/ servent à construire l'image.
-.git
-.github
-.venv
-.claude
-.env
+# Fichiers et dossiers cachés : Git, CI, environnements, secrets, outils.
+.*
 data
 models
 notebooks
@@ -14,6 +11,3 @@ pipelines
 sql
 **/__pycache__
 **/*.egg-info
-.pytest_cache
-.ruff_cache
-.coverage
