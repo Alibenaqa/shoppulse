@@ -90,11 +90,11 @@ Puis, sur tous les systèmes :
 ```bash
 pip install -e ".[pipeline,dashboard,notebooks,dev]"
 cp .env.example .env               # Windows : copy .env.example .env
-docker compose -f infra/docker-compose.yml --env-file .env up -d postgres
+docker compose -f infra/docker-compose.yml --env-file .env up -d --wait postgres
 ```
 
-Si le port 5432 est déjà pris sur votre machine, changez `POSTGRES_PORT`
-dans `.env`.
+`--wait` rend la main quand la base est prête. Si le port 5432 est déjà
+pris sur votre machine, changez `POSTGRES_PORT` dans `.env`.
 
 **Données** : téléchargez le jeu
 [Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
