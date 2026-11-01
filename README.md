@@ -207,7 +207,7 @@ et par région, quatre graphiques.
 ```
 shoppulse/
 ├── README.md
-├── docs/                 # note éthique, rapports générés par les pipelines
+├── docs/                 # cadrage, arbitrage, architecture, éthique, retro.md, rapports
 ├── data/
 │   ├── raw/              # données complètes (jamais versionnées)
 │   └── samples/          # échantillons < 1 Mo (pipelines/make_samples.py)
@@ -225,13 +225,18 @@ shoppulse/
 
 | Document | Contenu |
 |---|---|
+| [docs/cadrage.md](docs/cadrage.md) | note de cadrage : enjeux, objectifs, utilisateurs, feuille de route, évolutions |
+| [docs/arbitrage.md](docs/arbitrage.md) | arbitrage Prefect ou Airflow (coût, délai, performance, pérennité) |
+| [docs/architecture.md](docs/architecture.md) | schéma d'architecture cible sur une page |
 | [docs/ethique.md](docs/ethique.md) | biais par région, conformité RGPD, limites d'usage |
+| [docs/retro.md](docs/retro.md) | rétrospective : écarts avec la feuille de route |
 | [docs/quality_report.md](docs/quality_report.md) | volumes et contrôles qualité avant/après |
 | [docs/sql_analysis.md](docs/sql_analysis.md) | résultats des 8 requêtes SQL d'analyse |
 | [docs/delay_model_report.md](docs/delay_model_report.md) | comparaison des modèles de retard |
 | [docs/fairness_report.md](docs/fairness_report.md) | audit d'équité par région |
 | [docs/sentiment_report.md](docs/sentiment_report.md) | comparaison des modèles de sentiment |
 | [notebooks/](notebooks/) | 01 EDA · 02 tests statistiques · 03 segmentation · 04 modèle de retard · 05 audit d'équité · 06 sentiment |
+| [Backlog GitHub Projects](https://github.com/users/Alibenaqa/projects/1) | tâches par lot et les deux points d'étape ([issues](https://github.com/Alibenaqa/shoppulse/issues?q=is%3Aissue)) |
 
 ## Données et éthique
 
@@ -250,8 +255,8 @@ GitHub [@Alibenaqa](https://github.com/Alibenaqa).
 
 ## Usage de l'IA
 
-Ce projet a été réalisé avec **Claude Code**, l'assistant de programmation
-d'Anthropic, utilisé comme binôme technique.
+Ce projet a été réalisé avec l'aide d'un **assistant de programmation
+basé sur l'IA**, utilisé comme binôme technique.
 
 - **Ce que l'IA a fait** : proposer l'architecture et les arbitrages ;
   écrire la majeure partie du code (pipelines, SQL, modèles, API, tests,
